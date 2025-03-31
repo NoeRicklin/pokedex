@@ -2,31 +2,44 @@ package utils
 
 import(
 	"net/http"
+	"time"
+	"github.com/NoeRicklin/pokedex/internal/pokecache"
 	"encoding/json"
+	"io"
 )
 
-type AreaJSON struct {
-	Count		int
-	Next		string
-	Previous	string
-	Results		[]struct{
-		Name	string
-		Url		string
-	}
+var c *pokecache.Cache
+func SetupCache(dur time.Duration) {
+	c = pokecache.NewCache(dur)
 }
 
-func GetURLBody(url string) (AreaJSON, error) {
-	res, err := http.Get(url)
-	if err != nil {
-		return AreaJSON{}, err
-	}
-	defer res.Body.Close()
+func GetURLBody[T any](url string) (T, error) {
+	var rawBody []byte
 
-	var body AreaJSON
-	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-		return AreaJSON{}, err
+	_, cacheHit := c.Get(url)
+	if cacheHit {
+		rawBody, _ = c.Get(url)
+	} else {
+		res, err := http.Get(url)
+		if err != nil {
+			var nilT T
+			return nilT, err
+		}
+		defer res.Body.Close()
+
+		rawBody, err = io.ReadAll(res.Body)
+		if err != nil {
+			var nilT T
+			return nilT, err
+		}
 	}
 
-	return body, nil
+	var output T
+	if err := json.Unmarshal(rawBody, &output); err != nil {
+			var nilT T
+			return nilT, err
+	}
+
+	return output, nil
 }
 
